@@ -1,11 +1,4 @@
 import streamlit as st
-import jieba
-from gtts import gTTS
-import os
-import tempfile
-import base64
-from io import BytesIO
-import time
 import random
 from datetime import datetime
 
@@ -13,177 +6,187 @@ from datetime import datetime
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'current_scene' not in st.session_state:
-    st.session_state.current_scene = "goal_setting"
-if 'manager_speech' not in st.session_state:
-    st.session_state.manager_speech = ""
-if 'representative_speech' not in st.session_state:
-    st.session_state.representative_speech = ""
-if 'conversation_history' not in st.session_state:
-    st.session_state.conversation_history = []
-if 'ai_assistant' not in st.session_state:
-    st.session_state.ai_assistant = False
+    st.session_state.current_scene = "pre_visit_planning"
+if 'manager_input' not in st.session_state:
+    st.session_state.manager_input = ""
+if 'ai_response' not in st.session_state:
+    st.session_state.ai_response = ""
 
-# 设置页面标题和描述
-st.set_page_config(page_title="地区经理辅导模拟器", page_icon="🎙️", layout="wide")
-st.title("🎙️ 地区经理辅导模拟器 - 高级版")
+# 设置页面标题
+st.set_page_config(page_title="地区经理辅导模拟器", layout="wide")
+st.title("🎯 地区经理辅导模拟器 - AI对话版")
 
-# 辅导场景定义
-SCENES = {
-    "goal_setting": {
-        "title": "目标设定",
-        "description": "引导代表明确本次拜访目标",
-        "manager_prompt": "作为地区经理，你需要帮助代表明确本次拜访的具体目标。请询问代表：'这次拜访的主要目标是什么？你希望达成什么结果？'",
-        "representative_response": "我希望能了解医生对竞品的看法，并争取获得更多处方机会。"
+# 拜访流程场景定义
+VISIT_SCENES = {
+    "pre_visit_planning": {
+        "title": "访前计划",
+        "description": "准备拜访前的计划和准备",
+        "manager_prompt": "作为地区经理，你需要帮助代表做好访前计划。请询问代表：'你这次拜访的目标医生是谁？你了解他的处方习惯吗？你准备了哪些资料？'",
+        "ai_responses": [
+            "我要拜访的是张医生，他是心内科的主任。我知道他主要处方竞品A，但我们的产品在安全性方面有优势。",
+            "我准备了一些最新的临床数据，还有几个患者案例，希望能说服他尝试我们的产品。",
+            "我已经了解了医生的需求，他最近对竞品的效果有些疑虑，这正是我们的机会。"
+        ]
     },
-    "situation_analysis": {
-        "title": "情况分析",
-        "description": "分析当前市场情况和挑战",
-        "manager_prompt": "作为地区经理，你需要帮助代表分析当前市场情况。请询问代表：'你了解医生目前处方竞品的情况吗？有什么具体的挑战？'",
-        "representative_response": "医生目前主要处方竞品A，认为我们的产品效果不如竞品。"
+    "smooth_opening": {
+        "title": "顺利开场",
+        "description": "建立良好关系，自然进入主题",
+        "manager_prompt": "作为地区经理，你需要帮助代表做好开场。请询问代表：'你打算如何开场？如何建立良好的关系？'",
+        "ai_responses": [
+            "我会先问候医生，然后提到上次讨论的内容，自然过渡到今天的拜访目的。",
+            "我会先聊一些轻松的话题，了解他最近的工作情况，然后再进入正题。",
+            "我会直接说明今天的拜访目的，但会先表达对医生专业能力的尊重。"
+        ]
     },
-    "options_review": {
-        "title": "方案评估",
-        "description": "评估可能的解决方案",
-        "manager_prompt": "作为地区经理，你需要帮助代表评估解决方案。请询问代表：'针对这个情况，你有什么解决方案？你考虑过哪些策略？'",
-        "representative_response": "我考虑过提供更多的临床数据，但不确定是否有效。"
+    "explore_needs": {
+        "title": "探寻需求",
+        "description": "深入了解医生的需求和痛点",
+        "manager_prompt": "作为地区经理，你需要帮助代表探寻需求。请询问代表：'你打算如何探寻医生的需求？你会问哪些问题？'",
+        "ai_responses": [
+            "我会问医生目前使用竞品的情况，了解他的满意度和遇到的问题。",
+            "我会询问医生对治疗效果的期望，以及他对我们产品的看法。",
+            "我会通过几个具体问题，了解医生在处方决策时的考虑因素。"
+        ]
     },
-    "way_forward": {
-        "title": "行动计划",
-        "description": "制定具体的行动计划",
-        "manager_prompt": "作为地区经理，你需要帮助代表制定行动计划。请询问代表：'基于以上分析，你计划如何调整你的拜访策略？下一步具体怎么做？'",
-        "representative_response": "我计划准备更多的临床证据，并在下次拜访时重点强调我们的优势。"
+    "information_delivery": {
+        "title": "信息传递",
+        "description": "有效传递产品信息和价值",
+        "manager_prompt": "作为地区经理，你需要帮助代表传递信息。请询问代表：'你打算如何传递产品信息？重点强调哪些优势？'",
+        "ai_responses": [
+            "我会重点介绍我们产品的临床优势，特别是安全性方面的数据。",
+            "我会结合医生的需求，突出我们产品能解决他的具体问题。",
+            "我会用患者案例来说明产品的实际效果，让医生更容易理解。"
+        ]
+    },
+    "handle_objections": {
+        "title": "异议处理",
+        "description": "有效处理医生的异议和疑虑",
+        "manager_prompt": "作为地区经理，你需要帮助代表处理异议。请询问代表：'如果医生提出价格异议，你会如何回应？'",
+        "ai_responses": [
+            "我会强调产品的长期价值，而不仅仅是价格。我们的产品虽然价格稍高，但效果更好，能减少患者的治疗成本。",
+            "我会比较产品的总体成本效益，说明虽然单价高，但能带来更好的治疗效果和患者满意度。",
+            "我会提供一些临床数据支持，证明产品的价值超过了价格差异。"
+        ]
+    },
+    "close_effectively": {
+        "title": "高效缔结",
+        "description": "争取处方或下一步行动",
+        "manager_prompt": "作为地区经理，你需要帮助代表缔结。请询问代表：'你打算如何争取处方？你会提出什么请求？'",
+        "ai_responses": [
+            "我会请求医生尝试处方我们的产品，并提供一些样品让医生体验。",
+            "我会请求医生考虑在下次处方时优先考虑我们的产品，并约定下次拜访时间。",
+            "我会请求医生参加我们的学术活动，进一步了解产品优势。"
+        ]
+    },
+    "post_visit_analysis": {
+        "title": "访后分析",
+        "description": "总结拜访效果，制定改进计划",
+        "manager_prompt": "作为地区经理，你需要帮助代表做访后分析。请询问代表：'你觉得这次拜访的效果如何？有什么可以改进的地方？'",
+        "ai_responses": [
+            "我觉得这次拜访很成功，医生对我们的产品有了更深入的了解，并表示愿意尝试。",
+            "我觉得在探寻需求方面还可以做得更好，下次我会多问一些开放式问题。",
+            "我觉得信息传递很有效，但异议处理还需要加强，下次我会准备更多应对策略。"
+        ]
     }
 }
 
-# 语音合成函数
-def text_to_speech(text, lang='zh'):
-    if not text:
-        return None
-    
-    try:
-        tts = gTTS(text=text, lang=lang)
-        fp = BytesIO()
-        tts.write_to_fp(fp)
-        fp.seek(0)
-        
-        # 将音频转换为base64
-        audio_base64 = base64.b64encode(fp.read()).decode()
-        audio_html = f'<audio src="data:audio/mp3;base64,{audio_base64}" controls></audio>'
-        return audio_html
-    except Exception as e:
-        st.error(f"语音合成失败: {str(e)}")
-        return None
-
-# AI助手响应生成（简化版）
-def generate_ai_response(context, role):
-    if role == "representative":
-        responses = [
-            "我理解您的意思，但我需要更多时间思考...",
-            "根据我的经验，我认为应该...",
-            "我同意您的观点，同时我想补充...",
-            "让我想想，可能的解决方案是...",
-            "我需要收集更多信息才能给出准确回答..."
-        ]
-        return random.choice(responses)
-    return ""
+# AI代表响应生成
+def generate_ai_response(scene_key, manager_input):
+    scene = VISIT_SCENES[scene_key]
+    # 根据经理的输入选择合适的AI回应
+    if "计划" in manager_input or "准备" in manager_input:
+        return random.choice(scene["ai_responses"][:1])
+    elif "开场" in manager_input or "关系" in manager_input:
+        return random.choice(scene["ai_responses"][1:2])
+    elif "需求" in manager_input or "痛点" in manager_input:
+        return random.choice(scene["ai_responses"][2:3])
+    elif "信息" in manager_input or "传递" in manager_input:
+        return random.choice(scene["ai_responses"][3:4])
+    elif "异议" in manager_input or "疑虑" in manager_input:
+        return random.choice(scene["ai_responses"][4:5])
+    elif "缔结" in manager_input or "处方" in manager_input:
+        return random.choice(scene["ai_responses"][5:6])
+    elif "分析" in manager_input or "总结" in manager_input:
+        return random.choice(scene["ai_responses"][6:7])
+    else:
+        return random.choice(scene["ai_responses"])
 
 # 场景选择器
-st.sidebar.title("🎯 辅导场景")
+st.sidebar.title("🎯 拜访流程场景")
 selected_scene = st.sidebar.selectbox(
-    "选择辅导阶段",
-    list(SCENES.keys()),
-    format_func=lambda x: SCENES[x]["title"]
+    "选择拜访阶段",
+    list(VISIT_SCENES.keys()),
+    format_func=lambda x: VISIT_SCENES[x]["title"]
 )
 
 # 场景信息显示
-current_scene = SCENES[selected_scene]
+current_scene = VISIT_SCENES[selected_scene]
 st.markdown(f"### 【{current_scene['title']}】")
 st.markdown(f"**{current_scene['description']}**")
 
-# AI助手开关
-st.session_state.ai_assistant = st.sidebar.checkbox("启用AI助手（模拟代表）", value=st.session_state.ai_assistant)
-
 # 辅导进度
-progress_value = (list(SCENES.keys()).index(selected_scene) + 1) / len(SCENES)
-st.progress(progress_value, text=f"整体辅导进度(当前: 第{list(SCENES.keys()).index(selected_scene)+1}轮 - {current_scene['title']}")
+progress_value = (list(VISIT_SCENES.keys()).index(selected_scene) + 1) / len(VISIT_SCENES)
+st.progress(progress_value, text=f"整体辅导进度(当前: 第{list(VISIT_SCENES.keys()).index(selected_scene)+1}轮 - {current_scene['title']}")
 
 # 对话区域
-st.subheader("🗣️ 语音对话模拟")
+st.subheader("🗣️ AI对话模拟")
 
-# 地区经理的语音输入
-st.markdown("#### 🎤 地区经理的语音输入")
-manager_speech = st.text_area("请输入地区经理的对话内容:", height=120, key="manager_input")
+# 地区经理的输入
+st.markdown("#### 🎤 地区经理的对话输入")
+manager_input = st.text_area("请输入地区经理的对话内容:", height=100, key="manager_input")
 
-# 代表的语音输入
-st.markdown("#### 🎤 代表的语音输入")
-if st.session_state.ai_assistant:
-    st.info("AI助手已启用，代表将自动生成响应")
-    representative_speech = generate_ai_response(manager_speech, "representative")
-else:
-    representative_speech = st.text_area("请输入代表的对话内容:", height=120, key="representative_input")
-
-# 生成语音按钮
-if st.button("🎵 生成语音对话"):
-    if manager_speech:
-        # 添加地区经理的对话
-        manager_message = {
-            "role": "地区经理",
-            "content": manager_speech,
-            "speech": text_to_speech(manager_speech),
-            "timestamp": datetime.now().strftime("%H:%M:%S")
-        }
-        
-        # 添加代表的对话
-        if st.session_state.ai_assistant and not representative_speech:
-            representative_speech = generate_ai_response(manager_speech, "representative")
-        
-        representative_message = {
-            "role": "代表",
-            "content": representative_speech,
-            "speech": text_to_speech(representative_speech),
-            "timestamp": datetime.now().strftime("%H:%M:%S")
-        }
+# 生成AI回应按钮
+if st.button("🤖 生成AI回应"):
+    if manager_input:
+        # 生成AI回应
+        ai_response = generate_ai_response(selected_scene, manager_input)
         
         # 添加到对话历史
-        st.session_state.conversation_history.append(manager_message)
-        st.session_state.conversation_history.append(representative_message)
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        st.session_state.messages.append({
+            "role": "地区经理",
+            "content": manager_input,
+            "timestamp": timestamp
+        })
+        st.session_state.messages.append({
+            "role": "AI代表",
+            "content": ai_response,
+            "timestamp": timestamp
+        })
         
-        st.success("语音对话已生成！")
+        st.session_state.manager_input = ""
+        st.session_state.ai_response = ai_response
     else:
         st.warning("请输入地区经理的对话内容")
 
 # 显示对话历史
-if st.session_state.conversation_history:
+if st.session_state.messages:
     st.subheader("📝 对话历史")
-    for message in st.session_state.conversation_history[-10:]:  # 只显示最近10条
+    for message in st.session_state.messages[-10:]:  # 只显示最近10条
         with st.container():
             st.markdown(f"**{message['role']}** [{message['timestamp']}]")
             st.markdown(f"*{message['content']}*")
-            if message['speech']:
-                st.markdown(message['speech'], unsafe_allow_html=True)
             st.markdown("---")
 
 # 场景提示
 st.markdown(f"### 💡 场景提示")
 st.markdown(f"**地区经理提示**: {current_scene['manager_prompt']}")
-if st.session_state.ai_assistant:
-    st.markdown(f"**AI代表响应**: {current_scene['representative_response']}")
 
 # 对话分析
 st.subheader("📊 对话分析")
-if st.session_state.conversation_history:
-    manager_count = sum(1 for msg in st.session_state.conversation_history if msg['role'] == '地区经理')
-    representative_count = sum(1 for msg in st.session_state.conversation_history if msg['role'] == '代表')
+if st.session_state.messages:
+    manager_count = sum(1 for msg in st.session_state.messages if msg['role'] == '地区经理')
+    ai_count = sum(1 for msg in st.session_state.messages if msg['role'] == 'AI代表')
     
     col1, col2 = st.columns(2)
     with col1:
         st.metric("地区经理发言次数", manager_count)
     with col2:
-        st.metric("代表发言次数", representative_count)
+        st.metric("AI代表发言次数", ai_count)
     
     # 对话质量评分（简化版）
-    if manager_count > 0 and representative_count > 0:
-        quality_score = min(100, (representative_count / manager_count) * 80 + 20)
+    if manager_count > 0 and ai_count > 0:
+        quality_score = min(100, (ai_count / manager_count) * 80 + 20)
         st.progress(quality_score/100, text=f"对话质量评分: {quality_score:.1f}%")
 
 # 使用说明
@@ -192,44 +195,48 @@ st.markdown("""
 ### 📖 使用说明
 
 #### 基本功能：
-1. **选择辅导场景**：在左侧选择不同的辅导阶段
-2. **输入对话内容**：在文本框中输入地区经理和代表的对话
-3. **生成语音**：点击按钮将文本转换为语音并播放
-4. **AI助手**：启用后代表会自动生成响应
+1. **选择拜访阶段**：在左侧选择不同的拜访流程阶段
+2. **输入对话内容**：在文本框中输入地区经理的对话
+3. **生成AI回应**：点击按钮获取AI代表的回应
+4. **查看对话历史**：显示之前的对话记录
 
-#### 高级功能：
-- **对话历史**：显示最近的对话记录
-- **场景提示**：提供辅导建议和示例
-- **对话分析**：分析对话质量和参与度
+#### 拜访流程：
 
-#### 技术特性：
-- 支持中英文语音合成
-- 实时对话记录
-- 多场景辅导模拟
-- AI辅助对话生成
-- 对话质量分析
+**1. 访前计划** - 准备拜访前的计划和准备
+**2. 顺利开场** - 建立良好关系，自然进入主题  
+**3. 探寻需求** - 深入了解医生的需求和痛点
+**4. 信息传递** - 有效传递产品信息和价值
+**5. 异议处理** - 有效处理医生的异议和疑虑
+**6. 高效缔结** - 争取处方或下一步行动
+**7. 访后分析** - 总结拜访效果，制定改进计划
+
+#### 辅导技巧建议：
+
+**地区经理应该：**
+- 针对每个阶段提供具体指导
+- 提出开放式问题
+- 提供具体的建议和策略
+- 鼓励代表思考和反思
+
+**AI代表特点：**
+- 模拟真实临床医生的反应
+- 根据场景生成合理的回应
+- 提供多样化的回答选项
 
 ---
 
-### 💡 辅导技巧建议
+### 💡 示例对话：
 
-**地区经理应该：**
-- 提出开放式问题
-- 积极倾听代表观点
-- 提供具体建议
-- 鼓励代表思考
+**地区经理**: "你好，今天我想给你辅导一下访前计划这一趴，来做一些探讨。"
+**AI代表**: "我要拜访的是张医生，他是心内科的主任。我知道他主要处方竞品A，但我们的产品在安全性方面有优势。"
 
-**代表应该：**
-- 清晰表达观点
-- 积极参与讨论
-- 接受反馈
-- 制定行动计划
+**地区经理**: "你打算如何开场？如何建立良好的关系？"
+**AI代表**: "我会先问候医生，然后提到上次讨论的内容，自然过渡到今天的拜访目的。"
 """)
 
 # 添加重置按钮
 if st.button("🔄 重置对话"):
-    st.session_state.conversation_history = []
     st.session_state.messages = []
-    st.session_state.manager_speech = ""
-    st.session_state.representative_speech = ""
+    st.session_state.manager_input = ""
+    st.session_state.ai_response = ""
     st.success("对话已重置")
