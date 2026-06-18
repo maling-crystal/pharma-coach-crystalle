@@ -1,6 +1,9 @@
 import streamlit as st
 import random
 from datetime import datetime
+from gtts import gTTS
+import os
+import base64
 
 # 初始化session state
 if 'messages' not in st.session_state:
@@ -111,6 +114,19 @@ def generate_ai_response(scene_key, manager_input):
     else:
         return random.choice(scene["ai_responses"])
 
+# 文本转语音函数
+def text_to_speech(text, lang='zh'):
+    try:
+        tts = gTTS(text=text, lang=lang)
+        tts.save("response.mp3")
+        with open("response.mp3", "rb") as f:
+            audio_bytes = f.read()
+        audio_base64 = base64.b64encode(audio_bytes).decode()
+        return f'<audio controls><source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3"></audio>'
+    except Exception as e:
+        st.error(f"语音合成失败: {str(e)}")
+        return None
+
 # 场景选择器
 st.sidebar.title("🎯 拜访流程场景")
 selected_scene = st.sidebar.selectbox(
@@ -133,7 +149,7 @@ st.subheader("🗣️ AI对话模拟")
 
 # 地区经理的输入
 st.markdown("#### 🎤 地区经理的对话输入")
-manager_input = st.text_area("请输入地区经理的对话内容:", height=100, key="manager_input")
+manager_input = st.text_area("请输入地区经理的对话内容:", height=100, key="manager_input_field")
 
 # 生成AI回应按钮
 if st.button("🤖 生成AI回应"):
@@ -154,6 +170,11 @@ if st.button("🤖 生成AI回应"):
             "timestamp": timestamp
         })
         
+        # 生成语音
+        audio_html = text_to_speech(ai_response)
+        if audio_html:
+            st.session_state.audio_html = audio_html
+        
         st.session_state.manager_input = ""
         st.session_state.ai_response = ai_response
     else:
@@ -166,6 +187,8 @@ if st.session_state.messages:
         with st.container():
             st.markdown(f"**{message['role']}** [{message['timestamp']}]")
             st.markdown(f"*{message['content']}*")
+            if message['role'] == 'AI代表' and hasattr(st.session_state, 'audio_html'):
+                st.markdown(st.session_state.audio_html, unsafe_allow_html=True)
             st.markdown("---")
 
 # 场景提示
@@ -239,4 +262,6 @@ if st.button("🔄 重置对话"):
     st.session_state.messages = []
     st.session_state.manager_input = ""
     st.session_state.ai_response = ""
+    if hasattr(st.session_state, 'audio_html'):
+        del st.session_state.audio_html
     st.success("对话已重置")
