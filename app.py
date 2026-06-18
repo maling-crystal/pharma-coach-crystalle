@@ -153,4 +153,24 @@ def main():
             
             # 判断是否需要进入下一个辅导周期
             if st.session_state.stage > 4:
-                if st.session_stat
+                if st.session_state.cycle_idx < st.session_state.max_cycles - 1:
+                    feedback_text += f"\n\n🎉 **第 {st.session_state.cycle_idx + 1} 轮辅导完成！**\n代表将执行计划并在下次拜访中遇到新情况，请进入下一跟进周期。"
+                else:
+                    feedback_text += f"\n\n🎉 **全周期持续辅导完成！** 代表已实现行为转变并达成目标。"
+            else:
+                feedback_text += f"\n\n➡️ 下一阶段:\n{simulator.grow_pfi_mapping[st.session_state.stage]}"
+
+            st.session_state.history.append({'role': 'feedback', 'content': feedback_text})
+            st.session_state.history.append({'role': 'bot', 'content': f"【医药代表回应】: {rep_reply}"})
+            st.rerun()
+    
+    # 周期切换按钮
+    elif st.session_state.stage > 4 and st.session_state.cycle_idx < st.session_state.max_cycles - 1:
+        if st.button("➡️ 开始下一周期的跟进辅导", type="primary", use_container_width=True):
+            st.session_state.cycle_idx += 1
+            st.session_state.stage = 1
+            st.session_state.history = [] # 清空当前屏幕对话，保留侧边栏累计分数
+            st.rerun()
+
+if __name__ == "__main__":
+    main()
