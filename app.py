@@ -6,9 +6,8 @@ import os
 import base64
 import re
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go  # 使用Plotly替代matplotlib
 import pandas as pd
-from matplotlib.patches import Polygon
 
 # 初始化session state
 if 'messages' not in st.session_state:
@@ -231,38 +230,37 @@ def text_to_speech(text, lang='zh'):
         st.error(f"语音合成失败: {str(e)}")
         return None
 
-# 生成蛛网图
+# 生成蛛网图（使用Plotly）
 def generate_radar_chart(scores):
-    # 准备数据
     categories = list(GROW_DIMENSIONS.keys())
     values = [scores[cat]["score"] for cat in categories]
     
-    # 创建图形
-    fig, ax = plt.subplots(figsize=(8, 6), subplot_kw=dict(polar=True))
+    fig = go.Figure(data=go.Scatterpolar(
+        r=values + [values[0]],  # 闭合图形
+        theta=categories + [categories[0]],  # 闭合图形
+        fill='toself',
+        name='技能评分',
+        line=dict(color='royalblue', width=2),
+        fillcolor='rgba(65, 105, 225, 0.25)'
+    ))
     
-    # 角度计算
-    N = len(categories)
-    angles = [n / float(N) * 2 * np.pi for n in range(N)]
-    angles += angles[:1]  # 闭合图形
-    
-    # 添加数据
-    values += values[:1]  # 闭合图形
-    
-    # 绘制多边形
-    ax.plot(angles, values, linewidth=2, linestyle='solid')
-    ax.fill(angles, values, alpha=0.25)
-    
-    # 添加标签
-    plt.xticks(angles[:-1], [GROW_DIMENSIONS[cat]["title"] for cat in categories])
-    
-    # 设置y轴范围
-    ax.set_ylim(0, 100)
-    
-    # 添加网格线
-    ax.grid(True)
-    
-    # 添加标题
-    plt.title("GROW辅导技巧评分", size=15, y=1.1)
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                tickvals=[0, 25, 50, 75, 100],
+                ticktext=['0', '25', '50', '75', '100']
+            )
+        ),
+        title={
+            'text': "GROW辅导技巧评分",
+            'font': {'size': 20}
+        },
+        showlegend=False,
+        height=400,
+        width=500
+    )
     
     return fig
 
@@ -397,8 +395,8 @@ if st.button("📈 生成评分和反馈"):
     with col4:
         st.metric("行动计划", f"{st.session_state.scores['way_forward']['score']}/100")
     
-    # 显示蛛网图
-    st.pyplot(generate_radar_chart(st.session_state.scores))
+    # 显示蛛网图（使用Plotly）
+    st.plotly_chart(generate_radar_chart(st.session_state.scores), use_container_width=True)
     
     # 显示详细反馈
     st.subheader("💡 详细反馈")
