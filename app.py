@@ -6,7 +6,7 @@ import os
 import base64
 import re
 import numpy as np
-import plotly.graph_objects as go  # 使用Plotly替代matplotlib
+import plotly.graph_objects as go
 import pandas as pd
 
 # 初始化session state
@@ -14,14 +14,6 @@ if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'current_scene' not in st.session_state:
     st.session_state.current_scene = "pre_visit_planning"
-if 'dialogue_context' not in st.session_state:
-    st.session_state.dialogue_context = {}
-if 'manager_input' not in st.session_state:
-    st.session_state.manager_input = ""
-if 'ai_response' not in st.session_state:
-    st.session_state.ai_response = ""
-if 'audio_html' not in st.session_state:
-    st.session_state.audio_html = ""
 if 'scores' not in st.session_state:
     st.session_state.scores = {
         "goal_setting": {"score": 0, "details": {}},
@@ -31,6 +23,8 @@ if 'scores' not in st.session_state:
     }
 if 'feedback' not in st.session_state:
     st.session_state.feedback = {}
+if 'conversation_active' not in st.session_state:
+    st.session_state.conversation_active = True
 
 # 设置页面标题
 st.set_page_config(page_title="地区经理辅导模拟器 - 智能对话版", layout="wide")
@@ -320,13 +314,26 @@ st.progress(progress_value, text=f"整体辅导进度(当前: 第{list(VISIT_SCE
 # 对话区域
 st.subheader("🗣️ 智能对话模拟")
 
-# 地区经理的输入
-st.markdown("#### 🎤 地区经理的对话输入")
-manager_input = st.text_area("请输入地区经理的对话内容:", height=100, key="manager_input_field")
+# 对话历史显示
+if st.session_state.messages:
+    st.subheader("📝 对话历史")
+    for message in st.session_state.messages:
+        with st.container():
+            st.markdown(f"**{message['role']}** [{message['timestamp']}]")
+            st.markdown(f"*{message['content']}*")
+            if message['role'] == 'AI代表' and 'audio_html' in message:
+                st.markdown(message['audio_html'], unsafe_allow_html=True)
+            st.markdown("---")
 
-# 生成AI回应按钮
-if st.button("🤖 生成AI回应"):
-    if manager_input:
+# 创建对话表单
+with st.form(key='dialog_form'):
+    st.markdown("#### 🎤 地区经理的对话输入")
+    manager_input = st.text_area("请输入地区经理的对话内容:", height=100, key="manager_input_field", placeholder="输入你的对话内容...")
+    
+    # 提交按钮
+    submit_button = st.form_submit_button("🤖 发送对话")
+    
+    if submit_button and manager_input.strip():
         # 生成智能回应
         ai_response = generate_intelligent_response(selected_scene, manager_input, st.session_state.messages)
         
@@ -337,19 +344,16 @@ if st.button("🤖 生成AI回应"):
             "content": manager_input,
             "timestamp": timestamp
         })
-        st.session_state.messages.append({
-            "role": "AI代表",
-            "content": ai_response,
-            "timestamp": timestamp
-        })
         
         # 生成语音
         audio_html = text_to_speech(ai_response)
-        if audio_html:
-            st.session_state.audio_html = audio_html
         
-        st.session_state.manager_input = ""
-        st.session_state.ai_response = ai_response
+        st.session_state.messages.append({
+            "role": "AI代表",
+            "content": ai_response,
+            "timestamp": timestamp,
+            "audio_html": audio_html
+        })
         
         # 自动更新评分（简化版，实际应用中可以根据对话内容更智能地评分）
         for grow_key in st.session_state.scores:
@@ -361,20 +365,10 @@ if st.button("🤖 生成AI回应"):
                 st.session_state.scores[grow_key]["score"] = min(100, st.session_state.scores[grow_key]["score"] + random.randint(0, 5))
             elif grow_key == "way_forward":
                 st.session_state.scores[grow_key]["score"] = min(100, st.session_state.scores[grow_key]["score"] + random.randint(0, 5))
-                
-    else:
-        st.warning("请输入地区经理的对话内容")
-
-# 显示对话历史
-if st.session_state.messages:
-    st.subheader("📝 对话历史")
-    for message in st.session_state.messages[-10:]:  # 只显示最近10条
-        with st.container():
-            st.markdown(f"**{message['role']}** [{message['timestamp']}]")
-            st.markdown(f"*{message['content']}*")
-            if message['role'] == 'AI代表' and st.session_state.audio_html:
-                st.markdown(st.session_state.audio_html, unsafe_allow_html=True)
-            st.markdown("---")
+        
+        # 清空输入框
+        st.session_state.manager_input = ""
+        st.rerun()  # 重新运行以更新界面
 
 # 评分系统
 st.subheader("📊 GROW辅导技巧评分系统")
@@ -437,9 +431,9 @@ st.markdown("""
 #### 基本功能：
 1. **选择拜访阶段**：在左侧选择不同的拜访流程阶段
 2. **输入对话内容**：在文本框中输入地区经理的对话
-3. **生成AI回应**：点击按钮获取AI代表的回应
+3. **发送对话**：点击按钮发送对话并获取AI回应
 4. **生成评分和反馈**：点击按钮生成GROW评分和详细反馈
-5. **查看对话历史**：显示之前的对话记录
+5. **查看对话历史**：对话历史始终显示在界面上
 
 #### 评分系统：
 - **GROW四大项**：目标设定、现状分析、方案评估、行动计划
@@ -468,8 +462,6 @@ st.markdown("""
 if st.button("🔄 重置对话"):
     st.session_state.messages = []
     st.session_state.manager_input = ""
-    st.session_state.ai_response = ""
-    st.session_state.audio_html = ""
     st.session_state.scores = {
         "goal_setting": {"score": 0, "details": {}},
         "situation_analysis": {"score": 0, "details": {}},
