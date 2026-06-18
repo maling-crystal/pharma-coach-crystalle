@@ -1,7 +1,5 @@
-   streamlit
-   gtts
-   matplotlib
-   numpy
-   pandas
-   plotly
-   
+streamlit
+pydub
+numpy
+pandas
+plotly
