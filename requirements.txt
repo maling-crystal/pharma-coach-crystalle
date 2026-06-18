@@ -1,2 +1,7 @@
    streamlit
    gtts
+   matplotlib
+   numpy
+   pandas
+   plotly
+   
