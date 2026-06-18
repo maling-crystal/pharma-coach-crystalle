@@ -5,9 +5,6 @@ import base64
 import numpy as np
 import plotly.graph_objects as go
 import pandas as pd
-from pydub import AudioSegment
-import tempfile
-import os
 
 # 初始化session state
 if 'analysis_complete' not in st.session_state:
@@ -232,25 +229,17 @@ if uploaded_file:
     st.audio(uploaded_file, format="audio/wav")
     
     if st.button("📊 分析音频并评分"):
-        # 保存音频文件到临时位置
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as temp_file:
-            temp_file.write(uploaded_file.read())
-            temp_file_path = temp_file.name
-        
         # 模拟分析过程
         with st.spinner("正在分析音频内容..."):
             # 这里可以添加实际的语音分析代码
             # 由于Streamlit Cloud限制，我们使用模拟数据
-            analysis_results = analyze_audio(temp_file_path)
+            analysis_results = analyze_audio(uploaded_file)
             
             # 更新session state
             st.session_state.scores = analysis_results
             st.session_state.feedback = generate_feedback(analysis_results)
             st.session_state.audio_file = uploaded_file
             st.session_state.analysis_complete = True
-            
-            # 删除临时文件
-            os.unlink(temp_file_path)
         
         st.rerun()
 
