@@ -8,10 +8,6 @@ import re
 import numpy as np
 import plotly.graph_objects as go
 import pandas as pd
-import tempfile
-import speech_recognition as sr
-from pydub import AudioSegment
-import io
 
 # 初始化session state
 if 'messages' not in st.session_state:
@@ -226,18 +222,6 @@ def text_to_speech(text, lang='zh'):
         st.error(f"语音合成失败: {str(e)}")
         return None
 
-# 语音转文本函数
-def speech_to_text(audio_file):
-    try:
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(audio_file) as source:
-            audio = recognizer.record(source)
-        text = recognizer.recognize_google(audio, language="zh-CN")
-        return text
-    except Exception as e:
-        st.error(f"语音识别失败: {str(e)}")
-        return None
-
 # 生成蛛网图（使用Plotly）
 def generate_radar_chart(scores):
     categories = list(GROW_DIMENSIONS.keys())
@@ -367,64 +351,6 @@ if prompt := st.chat_input("请输入地区经理的对话内容:"):
         elif grow_key == "way_forward":
             st.session_state.scores[grow_key]["score"] = min(100, st.session_state.scores[grow_key]["score"] + random.randint(0, 5))
 
-# 语音输入选项
-st.subheader("🎤 语音输入选项")
-col1, col2 = st.columns(2)
-
-with col1:
-    uploaded_file = st.file_uploader("上传语音文件", type=["wav", "mp3", "m4a"])
-    if uploaded_file:
-        st.audio(uploaded_file, format="audio/wav")
-        if st.button("处理语音文件"):
-            with st.spinner("正在处理语音文件..."):
-                # 转换音频格式
-                audio = AudioSegment.from_file(uploaded_file)
-                audio = audio.set_frame_rate(16000).set_channels(1)
-                
-                # 保存为临时文件
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
-                    audio.export(temp_file.name, format="wav")
-                    temp_file_path = temp_file.name
-                
-                # 语音转文本
-                text = speech_to_text(temp_file_path)
-                if text:
-                    st.session_state.messages.append({
-                        "role": "地区经理",
-                        "content": text,
-                        "timestamp": datetime.now().strftime("%H:%M:%S")
-                    })
-                    
-                    # 生成AI回应
-                    ai_response = generate_intelligent_response(selected_scene, text, st.session_state.messages)
-                    
-                    # 添加AI消息
-                    audio_html = text_to_speech(ai_response)
-                    st.session_state.messages.append({
-                        "role": "AI代表",
-                        "content": ai_response,
-                        "timestamp": datetime.now().strftime("%H:%M:%S"),
-                        "audio_html": audio_html
-                    })
-                    
-                    # 自动更新评分
-                    for grow_key in st.session_state.scores:
-                        if grow_key == "goal_setting":
-                            st.session_state.scores[grow_key]["score"] = min(100, st.session_state.scores[grow_key]["score"] + random.randint(0, 5))
-                        elif grow_key == "situation_analysis":
-                            st.session_state.scores[grow_key]["score"] = min(100, st.session_state.scores[grow_key]["score"] + random.randint(0, 5))
-                        elif grow_key == "options_review":
-                            st.session_state.scores[grow_key]["score"] = min(100, st.session_state.scores[grow_key]["score"] + random.randint(0, 5))
-                        elif grow_key == "way_forward":
-                            st.session_state.scores[grow_key]["score"] = min(100, st.session_state.scores[grow_key]["score"] + random.randint(0, 5))
-                    
-                    st.rerun()
-
-with col2:
-    st.write("或使用麦克风录制:")
-    if st.button("开始录音"):
-        st.warning("此功能需要浏览器支持麦克风访问")
-
 # 评分系统
 st.subheader("📊 GROW辅导技巧评分系统")
 
@@ -486,8 +412,7 @@ st.markdown("""
 #### 基本功能：
 1. **选择拜访阶段**：在左侧选择不同的拜访流程阶段
 2. **文本对话**：使用聊天输入框输入对话内容
-3. **语音输入**：上传语音文件或使用麦克风录制
-4. **生成评分和反馈**：点击按钮生成GROW评分和详细反馈
+3. **生成评分和反馈**：点击按钮生成GROW评分和详细反馈
 
 #### 评分系统：
 - **GROW四大项**：目标设定、现状分析、方案评估、行动计划
