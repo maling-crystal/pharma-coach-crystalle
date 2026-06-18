@@ -1,176 +1,235 @@
 import streamlit as st
 import jieba
+from gtts import gTTS
+import os
+import tempfile
+import base64
+from io import BytesIO
+import time
+import random
+from datetime import datetime
 
-# ================= 1. 智能分析与评分模块 (保持不变) =================
-class GROW_PFI_Analyzer:
-    def __init__(self):
-        self.grow_keywords = {
-            1: ["目标", "期望", "希望达成", "这次拜访", "目的", "想要", "上次的计划"],
-            2: ["现状", "具体发生了", "当时", "医生的反馈", "探寻", "聆听", "陈述", "传递", "怎么做的", "情况", "执行"],
-            3: ["方案", "选择", "如果", "可以尝试", "疑虑", "同理", "处理", "探讨", "还有什么办法", "应对", "调整"],
-            4: ["行动", "计划", "下一步", "跟进", "缔结", "承诺", "时间", "具体怎么做", "复盘", "再次跟进"]
-        }
-        self.pfi_keywords = ["访前计划", "观念分析", "SMART", "开场", "寒暄", "价值陈述", "探寻", "开放式", "封闭式", "增长机会", "积极聆听", "FAB", "特征利益", "差异化", "疑虑", "误解", "怀疑", "缺点", "澄清", "缔结", "总结", "行动方案", "跟进", "患者获益"]
+# 初始化session state
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+if 'current_scene' not in st.session_state:
+    st.session_state.current_scene = "goal_setting"
+if 'manager_speech' not in st.session_state:
+    st.session_state.manager_speech = ""
+if 'representative_speech' not in st.session_state:
+    st.session_state.representative_speech = ""
+if 'conversation_history' not in st.session_state:
+    st.session_state.conversation_history = []
+if 'ai_assistant' not in st.session_state:
+    st.session_state.ai_assistant = False
 
-    def analyze_and_score(self, user_input, current_stage):
-        words = list(jieba.cut(user_input))
-        score, feedback = 0, ""
-        grow_kws = self.grow_keywords.get(current_stage, [])
-        grow_hits = [w for w in words if w in grow_kws]
-        if grow_hits:
-            score += 30
-            feedback += f"✅ GROW辅导行为：成功引导至 {['Goal','Reality','Options','Will'][current_stage-1]} 阶段。\n"
-        else:
-            score += 10
-            feedback += f"❌ GROW辅导行为：未体现当前阶段应有的辅导动作。\n"
+# 设置页面标题和描述
+st.set_page_config(page_title="地区经理辅导模拟器", page_icon="🎙️", layout="wide")
+st.title("🎙️ 地区经理辅导模拟器 - 高级版")
 
-        pfi_hits = [w for w in words if w in self.pfi_keywords]
-        if pfi_hits:
-            score += 20 + min(10, len(pfi_hits) * 5)
-            feedback += f"✅ PFI技巧聚焦：辅导紧扣专业拜访技能。\n"
-        else:
-            score += 10
-            feedback += f"⚠️ PFI技巧聚焦：建议多使用PFI术语。\n"
+# 辅导场景定义
+SCENES = {
+    "goal_setting": {
+        "title": "目标设定",
+        "description": "引导代表明确本次拜访目标",
+        "manager_prompt": "作为地区经理，你需要帮助代表明确本次拜访的具体目标。请询问代表：'这次拜访的主要目标是什么？你希望达成什么结果？'",
+        "representative_response": "我希望能了解医生对竞品的看法，并争取获得更多处方机会。"
+    },
+    "situation_analysis": {
+        "title": "情况分析",
+        "description": "分析当前市场情况和挑战",
+        "manager_prompt": "作为地区经理，你需要帮助代表分析当前市场情况。请询问代表：'你了解医生目前处方竞品的情况吗？有什么具体的挑战？'",
+        "representative_response": "医生目前主要处方竞品A，认为我们的产品效果不如竞品。"
+    },
+    "options_review": {
+        "title": "方案评估",
+        "description": "评估可能的解决方案",
+        "manager_prompt": "作为地区经理，你需要帮助代表评估解决方案。请询问代表：'针对这个情况，你有什么解决方案？你考虑过哪些策略？'",
+        "representative_response": "我考虑过提供更多的临床数据，但不确定是否有效。"
+    },
+    "way_forward": {
+        "title": "行动计划",
+        "description": "制定具体的行动计划",
+        "manager_prompt": "作为地区经理，你需要帮助代表制定行动计划。请询问代表：'基于以上分析，你计划如何调整你的拜访策略？下一步具体怎么做？'",
+        "representative_response": "我计划准备更多的临床证据，并在下次拜访时重点强调我们的优势。"
+    }
+}
 
-        if "?" in user_input or "？" in user_input or "怎么" in user_input or "如何" in user_input:
-            score += 20
-            feedback += "✅ 启发式提问：运用提问引导代表自主反思。\n"
-        else:
-            feedback += "⚠️ 启发式提问：经理应多提问。\n"
+# 语音合成函数
+def text_to_speech(text, lang='zh'):
+    if not text:
+        return None
+    
+    try:
+        tts = gTTS(text=text, lang=lang)
+        fp = BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        
+        # 将音频转换为base64
+        audio_base64 = base64.b64encode(fp.read()).decode()
+        audio_html = f'<audio src="data:audio/mp3;base64,{audio_base64}" controls></audio>'
+        return audio_html
+    except Exception as e:
+        st.error(f"语音合成失败: {str(e)}")
+        return None
 
-        return max(0, min(100, score)), feedback
-
-# ================= 2. 持续辅导场景模拟器 (多周期记忆) =================
-class ContinuousCoachingSimulator:
-    def __init__(self):
-        # 场景设计了 2 个辅导周期，代表在第1周期的改变，会在第2周期成为新的现状
-        self.scenarios = [
-            {
-                "title": "场景1: 从单向传递到探寻疑虑的持续转化 (张主任)",
-                "cycles": [
-                    { # 第一次辅导：发现问题，制定探寻方案
-                        "intro": "代表反馈张主任习惯处方竞品，代表自认为传递了详尽的临床数据，但无效。",
-                        "stage_reply": {
-                            1: "经理，这次拜访张主任，我的目标是让他把我们产品加进二线方案。但我讲了很多数据，他还是没开处方。",
-                            2: "我一进去就给他看了临床数据图表。他听完说竞品用了多年安全性有数。我没多问，又强调了一遍疗效。感觉他没在听。",
-                            3: "他主要是觉得我们缺乏老年患者的长期安全性数据。我当时有点慌，不知道怎么接话。我是不是该直接换话题？",
-                            4: "好的经理。我本周五前找医学部申请安全性亚组数据，下周二拜访时先用开放式问题探寻他门诊老年患者的现状，再用FAB做针对性回应。"
-                        }
-                    },
-                    { # 第二次辅导：基于上次的承诺，代表尝试了探寻，但遇到了新的处理疑虑难题
-                        "intro": "（距上次辅导一周后）代表执行了上周制定的“先探寻后传递”的计划，有了新进展，但也暴露了新问题。",
-                        "stage_reply": {
-                            1: "经理，上次您辅导后，我去拜访了张主任。我确实按计划先用开放式问题探寻了他对老年患者的顾虑，他愿意跟我多聊两句了。但最后还是没处方，我觉得目标还是没达成。",
-                            2: "我按照计划递交了安全性亚组数据。他说'数据看着不错，但你们这药说明书上写着有肝肾功能受损的禁忌，我这部分患者不敢用'。我当时没准备这个疑问，只能说'我回去查查'，缔结得很仓促。",
-                            3: "这次他不是怀疑疗效了，是针对禁忌症的'缺点'类疑虑。我是不是该找医学部明确一下轻中度肾损患者的用法用量？还是直接告诉他临床中这部分人群监测指标即可？",
-                            4: "明白了。我明天找医学部确认轻中度肾损患者的剂量调整建议。后天去找张主任，用FAB话术说明在监测下的安全性保障，争取他开具首张处方。下周三我给您看处方照片。"
-                        }
-                    }
-                ]
-            }
+# AI助手响应生成（简化版）
+def generate_ai_response(context, role):
+    if role == "representative":
+        responses = [
+            "我理解您的意思，但我需要更多时间思考...",
+            "根据我的经验，我认为应该...",
+            "我同意您的观点，同时我想补充...",
+            "让我想想，可能的解决方案是...",
+            "我需要收集更多信息才能给出准确回答..."
         ]
-        self.grow_pfi_mapping = {
-            1: "【GROW: Goal】📍引导代表明确本次拜访目标(可回顾上次目标)",
-            2: "【GROW: Reality】📍引导代表复盘PFI执行现状(探寻/传递/疑虑处理)",
-            3: "【GROW: Options】📍探讨PFI方案(如何调整应对新问题)",
-            4: "【GROW: Will】📍推动PFI缔结与跟进计划"
+        return random.choice(responses)
+    return ""
+
+# 场景选择器
+st.sidebar.title("🎯 辅导场景")
+selected_scene = st.sidebar.selectbox(
+    "选择辅导阶段",
+    list(SCENES.keys()),
+    format_func=lambda x: SCENES[x]["title"]
+)
+
+# 场景信息显示
+current_scene = SCENES[selected_scene]
+st.markdown(f"### 【{current_scene['title']}】")
+st.markdown(f"**{current_scene['description']}**")
+
+# AI助手开关
+st.session_state.ai_assistant = st.sidebar.checkbox("启用AI助手（模拟代表）", value=st.session_state.ai_assistant)
+
+# 辅导进度
+progress_value = (list(SCENES.keys()).index(selected_scene) + 1) / len(SCENES)
+st.progress(progress_value, text=f"整体辅导进度(当前: 第{list(SCENES.keys()).index(selected_scene)+1}轮 - {current_scene['title']}")
+
+# 对话区域
+st.subheader("🗣️ 语音对话模拟")
+
+# 地区经理的语音输入
+st.markdown("#### 🎤 地区经理的语音输入")
+manager_speech = st.text_area("请输入地区经理的对话内容:", height=120, key="manager_input")
+
+# 代表的语音输入
+st.markdown("#### 🎤 代表的语音输入")
+if st.session_state.ai_assistant:
+    st.info("AI助手已启用，代表将自动生成响应")
+    representative_speech = generate_ai_response(manager_speech, "representative")
+else:
+    representative_speech = st.text_area("请输入代表的对话内容:", height=120, key="representative_input")
+
+# 生成语音按钮
+if st.button("🎵 生成语音对话"):
+    if manager_speech:
+        # 添加地区经理的对话
+        manager_message = {
+            "role": "地区经理",
+            "content": manager_speech,
+            "speech": text_to_speech(manager_speech),
+            "timestamp": datetime.now().strftime("%H:%M:%S")
         }
+        
+        # 添加代表的对话
+        if st.session_state.ai_assistant and not representative_speech:
+            representative_speech = generate_ai_response(manager_speech, "representative")
+        
+        representative_message = {
+            "role": "代表",
+            "content": representative_speech,
+            "speech": text_to_speech(representative_speech),
+            "timestamp": datetime.now().strftime("%H:%M:%S")
+        }
+        
+        # 添加到对话历史
+        st.session_state.conversation_history.append(manager_message)
+        st.session_state.conversation_history.append(representative_message)
+        
+        st.success("语音对话已生成！")
+    else:
+        st.warning("请输入地区经理的对话内容")
 
-    def get_intro(self, scenario_idx, cycle_idx):
-        return self.scenarios[scenario_idx]["cycles"][cycle_idx]["intro"]
+# 显示对话历史
+if st.session_state.conversation_history:
+    st.subheader("📝 对话历史")
+    for message in st.session_state.conversation_history[-10:]:  # 只显示最近10条
+        with st.container():
+            st.markdown(f"**{message['role']}** [{message['timestamp']}]")
+            st.markdown(f"*{message['content']}*")
+            if message['speech']:
+                st.markdown(message['speech'], unsafe_allow_html=True)
+            st.markdown("---")
 
-    def get_reply(self, scenario_idx, cycle_idx, stage):
-        return self.scenarios[scenario_idx]["cycles"][cycle_idx]["stage_reply"].get(stage, "本轮辅导完成")
+# 场景提示
+st.markdown(f"### 💡 场景提示")
+st.markdown(f"**地区经理提示**: {current_scene['manager_prompt']}")
+if st.session_state.ai_assistant:
+    st.markdown(f"**AI代表响应**: {current_scene['representative_response']}")
 
-# ================= 3. 手机网页界面 (状态管理) =================
-def main():
-    st.set_page_config(page_title="持续辅导模拟器", page_icon="💊", layout="centered")
+# 对话分析
+st.subheader("📊 对话分析")
+if st.session_state.conversation_history:
+    manager_count = sum(1 for msg in st.session_state.conversation_history if msg['role'] == '地区经理')
+    representative_count = sum(1 for msg in st.session_state.conversation_history if msg['role'] == '代表')
     
-    # 初始化全局状态
-    if 'initialized' not in st.session_state:
-        st.session_state.initialized = True
-        st.session_state.scenario_idx = 0
-        st.session_state.cycle_idx = 0
-        st.session_state.stage = 1
-        st.session_state.score = 0
-        st.session_state.history = []
-        st.session_state.max_cycles = 2 # 设定最多辅导2个周期
-
-    analyzer = GROW_PFI_Analyzer()
-    simulator = ContinuousCoachingSimulator()
-
-    st.title("💊 GROW × PFI 持续辅导模拟器")
-    st.caption("模拟跨周期的代表辅导，追踪行为改变的持续过程")
-
-    # 侧边栏：历史辅导档案
-    with st.sidebar:
-        st.header("📂 辅导档案")
-        st.markdown(f"**当前场景:** {simulator.scenarios[st.session_state.scenario_idx]['title']}")
-        st.markdown(f"**辅导周期:** 第 {st.session_state.cycle_idx + 1} 次 / 共 {st.session_state.max_cycles} 次")
-        st.markdown(f"**累计得分:** {st.session_state.score}")
-        if st.button("🔄 重置所有辅导进程", use_container_width=True):
-            for key in st.session_state.keys():
-                del st.session_state[key]
-            st.rerun()
-
-    # 显示当前辅导周期的背景信息
-    current_intro = simulator.get_intro(st.session_state.scenario_idx, st.session_state.cycle_idx)
-    if st.session_state.stage == 1 and len(st.session_state.history) == 0:
-        if st.session_state.cycle_idx == 0:
-            st.info(f"**【初次辅导背景】**\n\n{current_intro}\n\n---\n{simulator.grow_pfi_mapping[1]}")
-        else:
-            st.warning(f"**【第 {st.session_state.cycle_idx + 1} 次跟进辅导】**\n\n{current_intro}\n\n---\n{simulator.grow_pfi_mapping[1]}")
-
-    # 进度条与指标
-    total_stages = st.session_state.max_cycles * 4
-    current_progress = (st.session_state.cycle_idx * 4 + st.session_state.stage) / total_stages
-    st.progress(min(1.0, current_progress), text=f"整体辅导进度 (当前: 第{st.session_state.cycle_idx+1}轮 - {['Goal','Reality','Options','Will','完成'][st.session_state.stage-1]})")
-
-    # 历史对话展示
-    for msg in st.session_state.history:
-        if msg['role'] == 'user':
-            st.chat_message('user', avatar='👨‍💼').write(msg['content'])
-        elif msg['role'] == 'bot':
-            st.chat_message('assistant', avatar='💊').write(msg['content'])
-        elif msg['role'] == 'feedback':
-            st.success(msg['content'])
-
-    # 输入区
-    if st.session_state.stage <= 4:
-        user_input = st.chat_input("输入你作为地区经理(DSM)的辅导话术...")
-        if user_input:
-            # 评分
-            score, feedback = analyzer.analyze_and_score(user_input, st.session_state.stage)
-            st.session_state.score += score
-            
-            st.session_state.history.append({'role': 'user', 'content': user_input})
-            
-            # 推进阶段
-            st.session_state.stage += 1
-            rep_reply = simulator.get_reply(st.session_state.scenario_idx, st.session_state.cycle_idx, st.session_state.stage - 1)
-            
-            feedback_text = f"📋 评估反馈:\n{feedback}\n本轮得分: +{score}"
-            
-            # 判断是否需要进入下一个辅导周期
-            if st.session_state.stage > 4:
-                if st.session_state.cycle_idx < st.session_state.max_cycles - 1:
-                    feedback_text += f"\n\n🎉 **第 {st.session_state.cycle_idx + 1} 轮辅导完成！**\n代表将执行计划并在下次拜访中遇到新情况，请进入下一跟进周期。"
-                else:
-                    feedback_text += f"\n\n🎉 **全周期持续辅导完成！** 代表已实现行为转变并达成目标。"
-            else:
-                feedback_text += f"\n\n➡️ 下一阶段:\n{simulator.grow_pfi_mapping[st.session_state.stage]}"
-
-            st.session_state.history.append({'role': 'feedback', 'content': feedback_text})
-            st.session_state.history.append({'role': 'bot', 'content': f"【医药代表回应】: {rep_reply}"})
-            st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("地区经理发言次数", manager_count)
+    with col2:
+        st.metric("代表发言次数", representative_count)
     
-    # 周期切换按钮
-    elif st.session_state.stage > 4 and st.session_state.cycle_idx < st.session_state.max_cycles - 1:
-        if st.button("➡️ 开始下一周期的跟进辅导", type="primary", use_container_width=True):
-            st.session_state.cycle_idx += 1
-            st.session_state.stage = 1
-            st.session_state.history = [] # 清空当前屏幕对话，保留侧边栏累计分数
-            st.rerun()
+    # 对话质量评分（简化版）
+    if manager_count > 0 and representative_count > 0:
+        quality_score = min(100, (representative_count / manager_count) * 80 + 20)
+        st.progress(quality_score/100, text=f"对话质量评分: {quality_score:.1f}%")
 
-if __name__ == "__main__":
-    main()
+# 使用说明
+st.markdown("""
+---
+### 📖 使用说明
+
+#### 基本功能：
+1. **选择辅导场景**：在左侧选择不同的辅导阶段
+2. **输入对话内容**：在文本框中输入地区经理和代表的对话
+3. **生成语音**：点击按钮将文本转换为语音并播放
+4. **AI助手**：启用后代表会自动生成响应
+
+#### 高级功能：
+- **对话历史**：显示最近的对话记录
+- **场景提示**：提供辅导建议和示例
+- **对话分析**：分析对话质量和参与度
+
+#### 技术特性：
+- 支持中英文语音合成
+- 实时对话记录
+- 多场景辅导模拟
+- AI辅助对话生成
+- 对话质量分析
+
+---
+
+### 💡 辅导技巧建议
+
+**地区经理应该：**
+- 提出开放式问题
+- 积极倾听代表观点
+- 提供具体建议
+- 鼓励代表思考
+
+**代表应该：**
+- 清晰表达观点
+- 积极参与讨论
+- 接受反馈
+- 制定行动计划
+""")
+
+# 添加重置按钮
+if st.button("🔄 重置对话"):
+    st.session_state.conversation_history = []
+    st.session_state.messages = []
+    st.session_state.manager_speech = ""
+    st.session_state.representative_speech = ""
+    st.success("对话已重置")
